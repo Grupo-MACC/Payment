@@ -8,7 +8,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies import get_db
 from sql import crud
 from sql import schemas
+from sql import models
 from .router_utils import raise_and_log_error, ORDER_SERVICE_URL
+import time
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -28,19 +30,20 @@ async def health_check():
 # Payments #########################################################################################
 @router.post(
     "/payment",
-    response_model=schemas.PaymentOut,
+    response_model=schemas.Payment,
     summary="Create payment",
     status_code=status.HTTP_201_CREATED,
     tags=["Payment"]
 )
 async def create_payment(
-    payment_schema: schemas.PaymentCreate,
+    payment_schema: schemas.PaymentPost,
     db: AsyncSession = Depends(get_db),
 ):
     """Create a payment for an order and (simulado) capturarlo."""
     logger.info("Request received to create payment for order %s.", payment_schema.order_id)
 
-    # 1) Validar que el pedido existe en ORDER (igual que Order habla con Machine)
+    #si se quiere esto se puede poner
+    '''# 1) Validar que el pedido existe en ORDER (igual que Order habla con Machine)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{ORDER_SERVICE_URL}/order/{payment_schema.order_id}")
@@ -50,26 +53,13 @@ async def create_payment(
             logger,
             status.HTTP_502_BAD_GATEWAY,
             f"Failed to contact order service or order not found: {net_exc}"
-        )
+        )'''
 
     # 2) Crear el pago en nuestra BD
     try:
         db_payment = await crud.create_payment_from_schema(db, payment_schema)
-        # 3) (MVP) Marcarlo como 'Captured' directamente
-        db_payment = await crud.update_payment_status(db, db_payment.id, "Captured")
 
-        # 4) Notificar a ORDER (mismo estilo que en Order->Machine)
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                # usando el endpoint que ya tienes en order
-                await client.put(
-                    f"{ORDER_SERVICE_URL}/update_order_status/{payment_schema.order_id}",
-                    params={"status": "Paid"}
-                )
-        except Exception as net_exc:
-            logger.warning("Could not notify order service about payment capture: %s", net_exc)
-
-        logger.info("Payment %s created & captured.", db_payment.id)
+        logger.info("Payment %s created", db_payment.id)
         return db_payment
 
     except ValueError as val_exc:
@@ -80,7 +70,7 @@ async def create_payment(
 
 @router.get(
     "/payment",
-    response_model=List[schemas.PaymentOut],
+    response_model=List[schemas.Payment],
     summary="Retrieve payment list",
     tags=["Payment", "List"]
 )
@@ -96,7 +86,7 @@ async def get_payment_list(
     "/payment/{payment_id}",
     summary="Retrieve single payment by id",
     responses={
-        status.HTTP_200_OK: {"model": schemas.PaymentOut, "description": "Requested Payment."},
+        status.HTTP_200_OK: {"model": schemas.Payment, "description": "Requested Payment."},
         status.HTTP_404_NOT_FOUND: {"model": schemas.Message, "description": "Payment not found"},
     },
     tags=["Payment"]
@@ -115,7 +105,7 @@ async def get_single_payment(
 
 @router.put(
     "/update_payment_status/{payment_id}",
-    response_model=schemas.PaymentOut,
+    response_model=schemas.Payment,
     tags=["Payment"]
 )
 async def update_payment_status(
@@ -126,10 +116,32 @@ async def update_payment_status(
     """Update payment status (admin/dev)."""
     return await crud.update_payment_status(db=db, payment_id=payment_id, status=status)
 
+@router.put(
+        "/payment/process/{order_id}"
+)
+async def process_payment(
+    order_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    time.sleep(1)
+    payment_db = await crud.get_payment_by_order_id(db=db, order_id=order_id)
+    if payment_db is not None:
+        payment_db = await crud.update_payment_status(db=db, payment_id=payment_db.id, status=models.Payment.STATUS_PAYED)
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.patch(
+                    f"{ORDER_SERVICE_URL}/order/payment_made/{payment_db.order_id}"
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as e:
+                print(e)
+    return payment_db
+    
+
 
 @router.post(
     "/payment/{payment_id}/refund",
-    response_model=schemas.PaymentOut,
+    response_model=schemas.Payment,
     status_code=status.HTTP_200_OK,
     summary="Refund payment",
     tags=["Payment"]

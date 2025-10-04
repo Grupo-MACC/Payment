@@ -12,14 +12,18 @@ class PaymentBase(BaseModel):
     amount_minor: int = Field(description="Importe en céntimos", example=1999)
     currency: str = Field(description="Moneda ISO-4217", min_length=3, max_length=3, example="EUR")
 
-class PaymentCreate(PaymentBase):
-    idempotency_key: Optional[str] = Field(default=None, example="idem-123")
+class PaymentPost(PaymentBase):
+    """Schema definition to create a new payment"""
 
-class PaymentOut(BaseModel):
+class Payment(PaymentBase):
     model_config = ConfigDict(from_attributes=True)  # ORM mode ON
-    id: int
-    order_id: int
-    amount_minor: int
-    currency: str
-    status: PaymentStatus
-    provider_payment_id: Optional[str] = None
+    id: int = Field(
+        description="Primary key/identifier of the payment.",
+        default=None,
+        example=1
+    )
+    status: str = Field(
+        description="Current status of the order",
+        default="Created",
+        example="Finished"
+    )

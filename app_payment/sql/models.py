@@ -33,9 +33,7 @@ class BaseModel(Base):
 class Payment(BaseModel):
     """Payment database table representation (propia de payment-svc)."""
     STATUS_INITIATED  = "Initiated"
-    STATUS_AUTHORIZED = "Authorized"
-    STATUS_CAPTURED   = "Captured"
-    STATUS_REFUNDED   = "Refunded"
+    STATUS_PAYED = "Payed"
     STATUS_FAILED     = "Failed"
     STATUS_CANCELED   = "Canceled"
 
@@ -50,7 +48,3 @@ class Payment(BaseModel):
     currency = Column(String(3), nullable=False, default="EUR")
 
     status = Column(String(32), nullable=False, default=STATUS_INITIATED)
-
-    # Identificadores externos/seguridad
-    provider_payment_id = Column(String(100), nullable=True)
-    idempotency_key = Column(String(64), nullable=True)
