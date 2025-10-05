@@ -16,7 +16,7 @@ trap terminate SIGTERM SIGINT
 
 uvicorn app_payment.main:app \
   --host 0.0.0.0 \
-  --port 5002 &
+  --port 5003 &
 
 UVICORN_PID=$!
 
