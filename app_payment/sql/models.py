@@ -33,7 +33,7 @@ class BaseModel(Base):
 class Payment(BaseModel):
     """Payment database table representation (propia de payment-svc)."""
     STATUS_INITIATED  = "Initiated"
-    STATUS_PAYED = "Payed"
+    STATUS_PAYED = "Paid"
     STATUS_FAILED     = "Failed"
     STATUS_CANCELED   = "Canceled"
 

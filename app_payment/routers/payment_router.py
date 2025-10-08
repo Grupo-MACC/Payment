@@ -28,7 +28,7 @@ async def health_check():
 
 
 # Payments #########################################################################################
-@router.post(
+'''@router.post(
     "/payment",
     response_model=schemas.Payment,
     summary="Create payment",
@@ -43,7 +43,7 @@ async def create_payment(
     logger.info("Request received to create payment for order %s.", payment_schema.order_id)
 
     #si se quiere esto se puede poner
-    '''# 1) Validar que el pedido existe en ORDER (igual que Order habla con Machine)
+    # 1) Validar que el pedido existe en ORDER (igual que Order habla con Machine)
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{ORDER_SERVICE_URL}/order/{payment_schema.order_id}")
@@ -53,7 +53,7 @@ async def create_payment(
             logger,
             status.HTTP_502_BAD_GATEWAY,
             f"Failed to contact order service or order not found: {net_exc}"
-        )'''
+        )
 
     # 2) Crear el pago en nuestra BD
     try:
@@ -65,7 +65,7 @@ async def create_payment(
     except ValueError as val_exc:
         raise_and_log_error(logger, status.HTTP_400_BAD_REQUEST, f"Invalid data: {val_exc}")
     except Exception as exc:
-        raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating payment: {exc}")
+        raise_and_log_error(logger, status.HTTP_409_CONFLICT, f"Error creating payment: {exc}")'''
 
 
 @router.get(
@@ -103,7 +103,7 @@ async def get_single_payment(
     return payment
 
 
-@router.put(
+'''@router.put(
     "/update_payment_status/{payment_id}",
     response_model=schemas.Payment,
     tags=["Payment"]
@@ -157,4 +157,4 @@ async def refund_payment(
     if payment.status != "Captured":
         raise_and_log_error(logger, status.HTTP_409_CONFLICT, "Only captured payments can be refunded")
 
-    return await crud.update_payment_status(db=db, payment_id=payment_id, status="Refunded")
+    return await crud.update_payment_status(db=db, payment_id=payment_id, status="Refunded")'''

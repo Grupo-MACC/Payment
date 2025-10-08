@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from routers import payment_router
 from sql import models
 from sql import database
+from broker import setup_rabbitmq, payment_broker_service
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
 logger = logging.getLogger(__name__)
@@ -27,6 +28,17 @@ async def lifespan(__app: FastAPI):
             logger.error(
                 "Could not create tables at startup",
             )
+        
+        try:
+            setup_rabbitmq()
+        except Exception as e:
+            logger.error(f"❌ Error configurando RabbitMQ: {e}")
+
+        try:
+            payment_broker_service.start_payment_broker_service()
+        except Exception as e:
+            logger.error(f"❌ Error lanzando payment broker service: {e}")
+            
         yield
     finally:
         logger.info("Shutting down database")

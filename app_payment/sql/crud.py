@@ -8,7 +8,7 @@ from . import models
 
 logger = logging.getLogger(__name__)
 
-async def create_payment_from_schema(db: AsyncSession, payment):
+async def create_payment_from_schema(db: AsyncSession, payment) -> models.Payment:
     db_payment = models.Payment(
         order_id=payment.order_id,
         amount_minor=payment.amount_minor,
