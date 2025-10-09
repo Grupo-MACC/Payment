@@ -1,16 +1,22 @@
-import pika
+from aio_pika import connect_robust, ExchangeType
 
-RABBITMQ_HOST = "rabbitmq"
+RABBITMQ_HOST = "amqp://guest:guest@rabbitmq/"
 EXCHANGE_NAME = "order_payment_exchange"
 
-def setup_rabbitmq():
-    connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
-    channel = connection.channel()
+async def setup_rabbitmq():
+    connection = await connect_robust(RABBITMQ_HOST)
+    channel = await connection.channel()
 
-    channel.exchange_declare(exchange=EXCHANGE_NAME, exchange_type='topic', durable=True)
+    exchange = await channel.declare_exchange(
+        EXCHANGE_NAME,
+        ExchangeType.TOPIC,
+        durable=True
+    )
 
-    channel.queue_declare(queue='payment_queue', durable=True)
+    payment_queue = await channel.declare_queue('payment_queue', durable=True)
 
-    channel.queue_bind(exchange=EXCHANGE_NAME, queue='payment_queue', routing_key='order.created')
+    await payment_queue.bind(exchange, routing_key='order.created')
+
+    print("✅ RabbitMQ configurado correctamente (exchange + colas creadas).")
 
     connection.close()

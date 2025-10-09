@@ -5,6 +5,7 @@ import os
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI
+import asyncio
 from routers import payment_router
 from sql import models
 from sql import database
@@ -30,12 +31,12 @@ async def lifespan(__app: FastAPI):
             )
         
         try:
-            setup_rabbitmq.setup_rabbitmq()
+            await setup_rabbitmq.setup_rabbitmq()
         except Exception as e:
             logger.error(f"❌ Error configurando RabbitMQ: {e}")   
 
         try:
-            payment_broker_service.start_payment_broker_service()
+            task = asyncio.create_task(payment_broker_service.consume_order_events())
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
             
@@ -43,7 +44,8 @@ async def lifespan(__app: FastAPI):
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
-
+        logger.info("Shutting down rabbitmq")
+        task.cancel()
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
