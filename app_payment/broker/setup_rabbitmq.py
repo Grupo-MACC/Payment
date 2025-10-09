@@ -1,6 +1,6 @@
 import pika
 
-RABBITMQ_HOST = ""
+RABBITMQ_HOST = "rabbitmq"
 EXCHANGE_NAME = "order_payment_exchange"
 
 def setup_rabbitmq():

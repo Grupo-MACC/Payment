@@ -7,8 +7,9 @@ import threading
 
 def handle_order_created(ch, method, properties, body):
     data = json.loads(body)
-    payment = data['payment']
-    db_payment = payment_service.create_payment(payment=payment)
+    #order = data['order_id']
+    time.sleep(3)
+    '''db_payment = payment_service.create_payment(payment=payment)
 
     routing_key = 'payment.failed'
     
@@ -16,14 +17,14 @@ def handle_order_created(ch, method, properties, body):
         time.sleep(3)
         db_payment = payment_service.pay_payment(payment_id=payment["payment_id"])
         if db_payment is not None:
-            routing_key = 'payment.paid'
+            routing_key = 'payment.paid'''
     connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
     channel = connection.channel()
 
     channel.basic_publish(
         exchange=EXCHANGE_NAME,
-        routing_key=routing_key,
-        body=json.dumps({"message": f"The order is paid.", "order_id": payment["order_id"]})
+        routing_key="payment.paid",
+        body=json.dumps({"message": f"The order is paid."})
     )
     connection.close()
 

@@ -8,7 +8,8 @@ from fastapi import FastAPI
 from routers import payment_router
 from sql import models
 from sql import database
-from broker import setup_rabbitmq, payment_broker_service
+from broker.setup_rabbitmq import setup_rabbitmq
+from broker import payment_broker_service
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
 logger = logging.getLogger(__name__)
