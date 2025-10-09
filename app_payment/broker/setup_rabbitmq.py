@@ -14,4 +14,3 @@ def setup_rabbitmq():
     channel.queue_bind(exchange=EXCHANGE_NAME, queue='payment_queue', routing_key='order.created')
 
     connection.close()
-    print("[PAYMENT] ✅ Exchange y colas configuradas")

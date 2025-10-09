@@ -23,7 +23,7 @@ def handle_order_created(ch, method, properties, body):
     channel.basic_publish(
         exchange=EXCHANGE_NAME,
         routing_key=routing_key,
-        body=json.dumps({"message": f"The order is paid.", "order_id": payment["order_id"]})
+        body=json.dumps({"message": f"The order is {"not" if routing_key == "payment.failed" else ""} paid.", "order_id": payment["order_id"]})
     )
     connection.close()
 

@@ -30,9 +30,9 @@ async def lifespan(__app: FastAPI):
             )
         
         try:
-            setup_rabbitmq()
+            setup_rabbitmq.setup_rabbitmq()
         except Exception as e:
-            logger.error(f"❌ Error configurando RabbitMQ: {e}")
+            logger.error(f"❌ Error configurando RabbitMQ: {e}")   
 
         try:
             payment_broker_service.start_payment_broker_service()
