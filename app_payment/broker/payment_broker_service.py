@@ -37,8 +37,8 @@ async def handle_order_created(message):
                 routing_key = 'payment.paid'
 
         # Publicar evento de resultado
-        connection, _ = await get_channel()
-        exchange = await declare_exchange()
+        connection, channel = await get_channel()
+        exchange = await declare_exchange(channel)
         await exchange.publish(
             Message(
                 body=json.dumps({
@@ -54,16 +54,16 @@ async def handle_order_created(message):
 
 async def consume_order_events():
     _, channel = await get_channel()
-    exchange = await declare_exchange()
+    exchange = await declare_exchange(channel)
 
     # Declarar la cola por seguridad
-    payment_queue = await channel.declare_queue("payment_queue", durable=True)
+    order_payment_queue = await channel.declare_queue("order_payment_queue", durable=True)
 
     # Declarar el binding por seguridad
-    await payment_queue.bind(exchange, routing_key="order.created")
+    await order_payment_queue.bind(exchange, routing_key="order.created")
 
     # Suscribirse a los mensajes
-    await payment_queue.consume(handle_order_created)
+    await order_payment_queue.consume(handle_order_created)
 
     logger.info("[ORDER] 🟢 Escuchando eventos de pedidos...")
 
@@ -75,11 +75,11 @@ async def consume_auth_events():
     
     exchange = await declare_exchange(channel)
     
-    delivery_queue = await channel.declare_queue('delivery_queue', durable=True)
-    await delivery_queue.bind(exchange, routing_key="auth.running")
-    await delivery_queue.bind(exchange, routing_key="auth.not_running")
+    payment_queue = await channel.declare_queue('payment_queue', durable=True)
+    await payment_queue.bind(exchange, routing_key="auth.running")
+    await payment_queue.bind(exchange, routing_key="auth.not_running")
     
-    await delivery_queue.consume(handle_auth_events)
+    await payment_queue.consume(handle_auth_events)
 
 async def handle_auth_events(message):
     async with message.process():
