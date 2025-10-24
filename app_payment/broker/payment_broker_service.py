@@ -1,11 +1,12 @@
 import json
 import logging
+import httpx
 import asyncio
-from aio_pika import connect_robust, Message, ExchangeType
+from aio_pika import Message
 from services import payment_service
 from sql import schemas
-from broker.setup_rabbitmq import RABBITMQ_HOST, EXCHANGE_NAME
-
+from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange#, PUBLIC_KEY_PATH
+from microservice_chassis_grupo2.core.router_utils import AUTH_SERVICE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ async def handle_order_created(message):
         data = json.loads(message.body)
         order_id = data['order_id']
         print(order_id)
+        number_of_pieces = data['number_of_pieces']
         logger.info(f"[ORDER] 🟢 Procesando pedido {order_id}")
 
         # Simula retrasos de manera asíncrona si quieres
@@ -21,7 +23,7 @@ async def handle_order_created(message):
         # Crear pago (async)
         payment = schemas.PaymentPost(
             order_id=order_id,
-            amount_minor=120,
+            amount_minor=120 * number_of_pieces * 100,
             currency="EUR"
         )
         db_payment = await payment_service.create_payment(payment=payment)
@@ -35,9 +37,8 @@ async def handle_order_created(message):
                 routing_key = 'payment.paid'
 
         # Publicar evento de resultado
-        connection = await connect_robust(RABBITMQ_HOST)
-        channel = await connection.channel()
-        exchange = await channel.declare_exchange(EXCHANGE_NAME, ExchangeType.TOPIC, durable=True)
+        connection, _ = await get_channel()
+        exchange = await declare_exchange()
         await exchange.publish(
             Message(
                 body=json.dumps({
@@ -52,14 +53,14 @@ async def handle_order_created(message):
 
 
 async def consume_order_events():
-    connection = await connect_robust(RABBITMQ_HOST)
-    channel = await connection.channel()
+    _, channel = await get_channel()
+    exchange = await declare_exchange()
 
     # Declarar la cola por seguridad
     payment_queue = await channel.declare_queue("payment_queue", durable=True)
 
     # Declarar el binding por seguridad
-    await payment_queue.bind(EXCHANGE_NAME, routing_key="order.created")
+    await payment_queue.bind(exchange, routing_key="order.created")
 
     # Suscribirse a los mensajes
     await payment_queue.consume(handle_order_created)
@@ -68,3 +69,36 @@ async def consume_order_events():
 
     # Mantener el loop activo
     await asyncio.Future()
+
+async def consume_auth_events():
+    _, channel = await get_channel()
+    
+    exchange = await declare_exchange(channel)
+    
+    delivery_queue = await channel.declare_queue('delivery_queue', durable=True)
+    await delivery_queue.bind(exchange, routing_key="auth.running")
+    await delivery_queue.bind(exchange, routing_key="auth.not_running")
+    
+    await delivery_queue.consume(handle_auth_events)
+
+async def handle_auth_events(message):
+    async with message.process():
+        data = json.loads(message.body)
+        if data["status"] == "running":
+            try:
+                async with httpx.AsyncClient(
+                    verify="/certs/ca.pem",
+                    cert=("/certs/payment/order-cert.pem", "/certs/payment/order-key.pem"),
+                ) as client:
+                    response = await client.get(
+                        f"{AUTH_SERVICE_URL}/auth/public-key"
+                    )
+                    response.raise_for_status()
+                    public_key = response.text
+                    
+                    with open("PUBLIC_KEY_PATH", "w", encoding="utf-8") as f:
+                        f.write(public_key)
+                    
+                    logger.info(f"✅ Clave pública de Auth guardada en {"PUBLIC_KEY_PATH"}")
+            except Exception as exc:
+                print(exc)

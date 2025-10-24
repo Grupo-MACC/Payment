@@ -11,3 +11,4 @@ requests~=2.32.4
 httpx
 pika
 aio_pika
+microservice-chassis-grupo2

@@ -1,6 +1,5 @@
 from sql import crud, models, schemas
-from sqlalchemy.ext.asyncio import AsyncSession
-from dependencies import get_db
+from microservice_chassis_grupo2.core.dependencies import get_db
 
 async def create_payment(payment: schemas.PaymentPost) -> models.Payment | None:
     try:

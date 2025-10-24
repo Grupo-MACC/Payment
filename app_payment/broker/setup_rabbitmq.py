@@ -1,17 +1,9 @@
-from aio_pika import connect_robust, ExchangeType
-
-RABBITMQ_HOST = "amqp://guest:guest@rabbitmq/"
-EXCHANGE_NAME = "order_payment_exchange"
+from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange
 
 async def setup_rabbitmq():
-    connection = await connect_robust(RABBITMQ_HOST)
-    channel = await connection.channel()
-
-    exchange = await channel.declare_exchange(
-        EXCHANGE_NAME,
-        ExchangeType.TOPIC,
-        durable=True
-    )
+    connection, channel = await get_channel()
+    
+    exchange = await declare_exchange()
 
     payment_queue = await channel.declare_queue('payment_queue', durable=True)
 

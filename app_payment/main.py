@@ -7,8 +7,7 @@ import uvicorn
 from fastapi import FastAPI
 import asyncio
 from routers import payment_router
-from sql import models
-from sql import database
+from microservice_chassis_grupo2.sql import database, models
 from broker import payment_broker_service, setup_rabbitmq
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
@@ -30,13 +29,14 @@ async def lifespan(__app: FastAPI):
                 "Could not create tables at startup",
             )
         
-        try:
+        '''try:
             await setup_rabbitmq.setup_rabbitmq()
         except Exception as e:
-            logger.error(f"❌ Error configurando RabbitMQ: {e}")   
+            logger.error(f"❌ Error configurando RabbitMQ: {e}")   '''
 
         try:
-            task = asyncio.create_task(payment_broker_service.consume_order_events())
+            task_order = asyncio.create_task(payment_broker_service.consume_order_events())
+            task_auth = asyncio.create_task(payment_broker_service.consume_auth_events())
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
             
@@ -45,7 +45,8 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down database")
         await database.engine.dispose()
         logger.info("Shutting down rabbitmq")
-        task.cancel()
+        task_order.cancel()
+        task_auth.cancel()
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
