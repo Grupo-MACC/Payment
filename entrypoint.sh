@@ -21,7 +21,7 @@ uvicorn app_payment.main:app \
   --ssl-keyfile /certs/payment/payment-key.pem \
   --ssl-certfile /certs/payment/payment-cert.pem \
   --ssl-ca-certs /certs/ca.pem \
-  --ssl-cert-reqs 2 &  # 2 = ssl.CERT_REQUIRED (cliente debe autenticarse)
+  --ssl-cert-reqs 1 &  # 1 = ssl.CERT_OPTIONAL (cliente no debe autenticarse)
 
 UVICORN_PID=$!
 

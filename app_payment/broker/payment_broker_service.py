@@ -5,7 +5,7 @@ import asyncio
 from aio_pika import Message
 from services import payment_service
 from sql import schemas
-from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange#, PUBLIC_KEY_PATH
+from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange, PUBLIC_KEY_PATH
 from microservice_chassis_grupo2.core.router_utils import AUTH_SERVICE_URL
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ async def handle_auth_events(message):
             try:
                 async with httpx.AsyncClient(
                     verify="/certs/ca.pem",
-                    cert=("/certs/payment/order-cert.pem", "/certs/payment/order-key.pem"),
+                    cert=("/certs/payment/payment-cert.pem", "/certs/payment/payment-key.pem"),
                 ) as client:
                     response = await client.get(
                         f"{AUTH_SERVICE_URL}/auth/public-key"
@@ -96,9 +96,9 @@ async def handle_auth_events(message):
                     response.raise_for_status()
                     public_key = response.text
                     
-                    with open("PUBLIC_KEY_PATH", "w", encoding="utf-8") as f:
+                    with open(PUBLIC_KEY_PATH, "w", encoding="utf-8") as f:
                         f.write(public_key)
                     
-                    logger.info(f"✅ Clave pública de Auth guardada en {"PUBLIC_KEY_PATH"}")
+                    logger.info(f"✅ Clave pública de Auth guardada en {PUBLIC_KEY_PATH}")
             except Exception as exc:
                 print(exc)
