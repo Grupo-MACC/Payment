@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 async def create_payment_from_schema(db: AsyncSession, payment) -> models.Payment:
     db_payment = models.Payment(
         order_id=payment.order_id,
+        user_id=payment.user_id,
         amount_minor=payment.amount_minor,
         currency=payment.currency,
         status=models.Payment.STATUS_INITIATED,
@@ -42,6 +43,24 @@ async def get_payment(db: AsyncSession, payment_id):
     stmt = select(models.Payment).where(models.Payment.id == payment_id)
     order = await get_element_statement_result(db, stmt)
     return order
+
+async def create_wallet(db: AsyncSession, user_id):
+    db_user_wallet = models.CustomerWallet(
+        user_id=user_id,
+        amount=0
+    )
+    db.add(db_user_wallet)
+    await db.commit()
+    await db.refresh(db_user_wallet)
+    return db_user_wallet
+
+async def update_wallet(db: AsyncSession, user_id, amount):
+    db_user_wallet = await get_element_by_id(db, models.CustomerWallet, user_id)
+    if db_user_wallet is not None:
+        db_user_wallet.amount = amount
+        await db.commit()
+        await db.refresh(db_user_wallet)
+    return db_user_wallet
 
 
 # Generic functions ################################################################################

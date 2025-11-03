@@ -14,8 +14,16 @@ class Payment(BaseModel):
 
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, nullable=False)
+    user_id = Column(Integer, nullable=False)
 
     amount_minor = Column(Integer, nullable=False)
     currency = Column(String(3), nullable=False, default="EUR")
 
     status = Column(String(32), nullable=False, default=STATUS_INITIATED)
+
+class CustomerWallet(BaseModel):
+    __tablename__ = "customer_wallet"
+    
+    user_id = Column(Integer, primary_key=True)
+    amount = Column(Integer, nullable=False)
+    currency = Column(String(3), nullable=False, default="EUR")

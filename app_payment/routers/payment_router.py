@@ -4,8 +4,8 @@ import logging
 from typing import List
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sql import crud
-from sql import schemas
+from sql import crud, schemas
+from services import payment_service
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
 from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db
 
@@ -26,10 +26,16 @@ async def health_check():
     logger.debug("GET '/' endpoint called.")
     return {"detail": "OK"}
 
+@router.get(
+    "/wallet"
+)
+async def get_user_wallet(
+    user = Depends(get_current_user)
+):
+    return await payment_service.view_wallet(user)
 
 @router.get(
     "",
-    response_model=List[schemas.Payment],
     summary="Retrieve payment list",
     tags=["Payment", "List"]
 )
@@ -45,10 +51,6 @@ async def get_payment_list(
 @router.get(
     "/{payment_id}",
     summary="Retrieve single payment by id",
-    responses={
-        status.HTTP_200_OK: {"model": schemas.Payment, "description": "Requested Payment."},
-        status.HTTP_404_NOT_FOUND: {"model": schemas.Message, "description": "Payment not found"},
-    },
     tags=["Payment"]
 )
 async def get_single_payment(
@@ -62,3 +64,13 @@ async def get_single_payment(
     if not payment:
         raise_and_log_error(logger, status.HTTP_404_NOT_FOUND, f"Payment {payment_id} not found")
     return payment
+
+@router.put(
+    "/add/{amount}"
+)
+async def add_money_to_wallet(
+    amount: int,
+    db: AsyncSession = Depends(get_db),
+    user = Depends(get_current_user)
+):
+    return await payment_service.add_money_to_wallet(user, amount)

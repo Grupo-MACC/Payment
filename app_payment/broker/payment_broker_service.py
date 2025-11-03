@@ -5,7 +5,7 @@ import asyncio
 from aio_pika import Message
 from services import payment_service
 from sql import schemas
-from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange#, PUBLIC_KEY_PATH
+from microservice_chassis_grupo2.core.rabbitmq_core import get_channel, declare_exchange, PUBLIC_KEY_PATH
 from microservice_chassis_grupo2.core.router_utils import AUTH_SERVICE_URL
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,7 @@ async def handle_order_created(message):
     async with message.process():
         data = json.loads(message.body)
         order_id = data['order_id']
+        user_id = data["user_id"]
         print(order_id)
         number_of_pieces = data['number_of_pieces']
         logger.info(f"[ORDER] 🟢 Procesando pedido {order_id}")
@@ -23,6 +24,7 @@ async def handle_order_created(message):
         # Crear pago (async)
         payment = schemas.PaymentPost(
             order_id=order_id,
+            user_id=user_id,
             amount_minor=120 * number_of_pieces * 100,
             currency="EUR"
         )
@@ -50,7 +52,6 @@ async def handle_order_created(message):
         )
         await connection.close()
         logger.info(f"[ORDER] 📤 Publicado evento {routing_key} → {order_id}")
-
 
 async def consume_order_events():
     _, channel = await get_channel()
@@ -88,7 +89,7 @@ async def handle_auth_events(message):
             try:
                 async with httpx.AsyncClient(
                     verify="/certs/ca.pem",
-                    cert=("/certs/payment/order-cert.pem", "/certs/payment/order-key.pem"),
+                    cert=("/certs/payment/payment-cert.pem", "/certs/payment/payment-key.pem"),
                 ) as client:
                     response = await client.get(
                         f"{AUTH_SERVICE_URL}/auth/public-key"
@@ -96,9 +97,25 @@ async def handle_auth_events(message):
                     response.raise_for_status()
                     public_key = response.text
                     
-                    with open("PUBLIC_KEY_PATH", "w", encoding="utf-8") as f:
+                    with open(PUBLIC_KEY_PATH, "w", encoding="utf-8") as f:
                         f.write(public_key)
                     
-                    logger.info(f"✅ Clave pública de Auth guardada en {"PUBLIC_KEY_PATH"}")
+                    logger.info(f"✅ Clave pública de Auth guardada en {PUBLIC_KEY_PATH}")
             except Exception as exc:
                 print(exc)
+
+async def consume_user_events():
+    _, channel = await get_channel()
+    
+    exchange = await declare_exchange(channel)
+    
+    user_created_queue = await channel.declare_queue('user_created_queue', durable=True)
+    await user_created_queue.bind(exchange, routing_key="user.created")
+    
+    await user_created_queue.consume(handle_user_events)
+
+async def handle_user_events(messsage):
+    async with messsage.process():
+        data = json.loads(messsage.body)
+        user_id = data["user_id"]
+        db_wallet = await payment_service.create_wallet(user_id=user_id)
