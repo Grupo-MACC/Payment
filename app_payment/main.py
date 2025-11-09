@@ -40,9 +40,10 @@ async def lifespan(__app: FastAPI):
             logger.error(f"❌ Error configurando RabbitMQ: {e}")   '''
 
         try:
-            task_order = asyncio.create_task(payment_broker_service.consume_order_events())
+            task_pay = asyncio.create_task(payment_broker_service.consume_pay_command())
             task_auth = asyncio.create_task(payment_broker_service.consume_auth_events())
             task_user = asyncio.create_task(payment_broker_service.consume_user_events())
+            task_monet_return = asyncio.create_task(payment_broker_service.consume_return_money())
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
             
@@ -51,9 +52,10 @@ async def lifespan(__app: FastAPI):
         logger.info("Shutting down database")
         await database.engine.dispose()
         logger.info("Shutting down rabbitmq")
-        task_order.cancel()
+        task_pay.cancel()
         task_auth.cancel()
         task_user.cancel()
+        task_monet_return.cancel()
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
