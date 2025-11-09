@@ -36,7 +36,7 @@ async def handle_order_created(message):
         if db_payment is not None:
             # Pagar el pago (async)
             db_payment_result = await payment_service.pay_payment(payment_id=db_payment.id)
-            if db_payment_result is not None:
+            if db_payment_result is None:
                 message = 'payment_rejected'
         # Publicar evento de resultado
         connection, channel = await get_channel()

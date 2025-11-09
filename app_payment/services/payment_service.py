@@ -47,8 +47,8 @@ async def pay_payment(payment_id: int) -> models.Payment | None:
                 db_user_wallet = await crud.get_element_by_id(db, models.CustomerWallet, user_id)
                 if db_user_wallet.amount >= amount:
                     db_user_wallet = await crud.update_wallet(db, user_id, db_user_wallet.amount - amount)
-                #else:
-                    #todo
+                else:
+                    return None
             db_payment = await crud.update_payment_status(
                 db=db,
                 payment_id=payment_id,
