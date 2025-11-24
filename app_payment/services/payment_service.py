@@ -18,9 +18,12 @@ async def create_wallet(user_id):
     except Exception as exc:
         return None
 
-async def add_money_to_wallet(user_id, amount):
+async def add_money_to_wallet(user_id, order_id, amount):
     try:
         async for db in get_db():
+            if amount is None:
+                db_payment = await crud.get_payment_by_order_id(db=db, order_id=order_id)
+                amount = db_payment.amount_minor
             db_wallet = await crud.get_element_by_id(db=db, model=models.CustomerWallet, element_id=user_id)
             new_amount = db_wallet.amount + amount
             db_wallet = await crud.update_wallet(db=db, user_id=user_id, amount=new_amount)

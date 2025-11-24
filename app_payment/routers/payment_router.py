@@ -2,12 +2,12 @@
 """FastAPI router definitions."""
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sql import crud, schemas
 from services import payment_service
 from microservice_chassis_grupo2.core.router_utils import raise_and_log_error
-from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db
+from microservice_chassis_grupo2.core.dependencies import get_current_user, get_db, check_public_key
 
 logger = logging.getLogger(__name__)
 router = APIRouter(
@@ -23,8 +23,11 @@ router = APIRouter(
 )
 async def health_check():
     """Endpoint to check if everything started correctly."""
-    logger.debug("GET '/' endpoint called.")
-    return {"detail": "OK"}
+    logger.debug("GET '/health' endpoint called.")
+    if check_public_key():
+        return {"detail": "OK"}
+    else:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not available")
 
 @router.get(
     "/wallet"
@@ -73,4 +76,4 @@ async def add_money_to_wallet(
     db: AsyncSession = Depends(get_db),
     user = Depends(get_current_user)
 ):
-    return await payment_service.add_money_to_wallet(user, amount)
+    return await payment_service.add_money_to_wallet(user_id=user, order_id=None, amount=amount)
