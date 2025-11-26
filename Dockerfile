@@ -21,6 +21,12 @@ ENV MACHINE_SERVICE=https://machine
 ENV DELIVERY_SERVICE=https://delivery
 ENV PAYMENT_SERVICE=https://payment
 ENV AUTH_SERVICE=https://auth
+# Consul Service Discovery
+ENV CONSUL_HOST=consul
+ENV CONSUL_PORT=8500
+ENV SERVICE_NAME=payment
+ENV SERVICE_PORT=5003
+ENV SERVICE_ID=payment-1
 
 # Create a non root user
 RUN useradd -u 1000 -d /home/pyuser -m pyuser && \
