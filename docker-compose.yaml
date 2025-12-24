@@ -1,0 +1,9 @@
+services:
+    payment:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        container_name: payment
+        ports:
+            - "5003:5003"
+        restart: on-failure
