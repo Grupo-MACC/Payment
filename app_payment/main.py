@@ -11,7 +11,7 @@ from sql import init_db
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from microservice_chassis_grupo2.sql import database, models
 from broker import payment_broker_service
-from consul_client import create_consul_client
+from microservice_chassis_grupo2.core.consul import create_consul_client
 
 # Configure logging ################################################################################
 logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
@@ -29,18 +29,6 @@ async def lifespan(__app: FastAPI):
 
     try:
         logger.info("Starting up")
-        
-        # Register with Consul
-        result = await consul_client.register_service(
-            service_name=service_name,
-            service_id=service_id,
-            service_port=service_port,
-            service_address=service_name,  # Docker DNS
-            tags=["fastapi", service_name],
-            meta={"version": "2.0.0"},
-            health_check_url=f"http://{service_name}:{service_port}/docs"
-        )
-        logger.info(f"✅ Consul service registration: {result}")
 
         try:
             logger.info("Creating database tables")
