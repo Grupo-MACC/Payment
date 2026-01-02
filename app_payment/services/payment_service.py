@@ -1,6 +1,10 @@
 from sql import crud, models, schemas
 from microservice_chassis_grupo2.core.dependencies import get_db
 
+
+import logging
+logger = logging.getLogger(__name__)
+
 async def create_payment(payment: schemas.PaymentPost) -> models.Payment | None:
     try:
         async for db in get_db():
@@ -32,12 +36,28 @@ async def add_money_to_wallet(user_id, order_id, amount):
         return None
 
 async def view_wallet(user_id: int):
+    """
+    Devuelve la wallet del usuario.
+
+    Si el usuario no tiene wallet todavía, la crea (lazy creation).
+    """
     try:
         async for db in get_db():
-            db_wallet = await crud.get_element_by_id(db=db, model=models.CustomerWallet, element_id=user_id)
+            db_wallet = await crud.get_element_by_id(
+                db=db,
+                model=models.CustomerWallet,
+                element_id=user_id
+            )
+
+            # Si no existe wallet, la creamos
+            if db_wallet is None:
+                db_wallet = await crud.create_wallet(db=db, user_id=user_id)
+
             return db_wallet
     except Exception as exc:
-        return None
+        # OJO: esto oculta errores reales. Ideal: log + raise.
+        logger.exception("Error viewing wallet for user %s", user_id)
+        return exc
 
 async def pay_payment(payment_id: int) -> models.Payment | None:
     try:
