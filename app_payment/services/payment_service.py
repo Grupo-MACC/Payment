@@ -1,77 +1,100 @@
 from sql import crud, models, schemas
+from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 from microservice_chassis_grupo2.core.dependencies import get_db
 
 
 import logging
 logger = logging.getLogger(__name__)
 
-async def create_payment(payment: schemas.PaymentPost) -> models.Payment | None:
-    try:
-        async for db in get_db():
-            db_payment = await crud.create_payment_from_schema(db=db, payment=payment)
-            return db_payment
-    except Exception as exc:
-        print(exc)
-        return None
+async def _get_or_create_wallet(db: AsyncSession, user_id: int) -> models.CustomerWallet:
+    """Obtiene la wallet del usuario o la crea si no existe.
 
-async def create_wallet(user_id):
-    try:
-        async for db in get_db():
-            db_wallet = await crud.create_wallet(db=db, user_id=user_id)
-            return db_wallet
-    except Exception as exc:
-        return None
+    Motivo:
+        - Evita nulls y crashes en add_money/pay cuando la wallet aún no existe.
+        - Centraliza el 'lazy creation' en un único punto (sin duplicar lógica).
 
-async def add_money_to_wallet(user_id, order_id, amount):
-    try:
-        async for db in get_db():
-            if amount is None:
-                db_payment = await crud.get_payment_by_order_id(db=db, order_id=order_id)
-                amount = db_payment.amount_minor
-            db_wallet = await crud.get_element_by_id(db=db, model=models.CustomerWallet, element_id=user_id)
-            new_amount = db_wallet.amount + amount
-            db_wallet = await crud.update_wallet(db=db, user_id=user_id, amount=new_amount)
-            return db_wallet
-    except Exception as exc:
-        return None
+    Nota:
+        - Asumo que `crud.get_element_by_id(CustomerWallet, element_id=user_id)`
+          busca por user_id (como ya estás usando en view_wallet).
+    """
+    wallet = await crud.get_element_by_id(
+        db=db,
+        model=models.CustomerWallet,
+        element_id=int(user_id),
+    )
+    if wallet is not None:
+        return wallet
+
+    # Reutiliza la función existente (no inventes otra vía)
+    wallet = await crud.create_wallet(db=db, user_id=int(user_id))
+    if wallet is None:
+        # Si create_wallet devuelve None, esto es un fallo real (DB, constraint, etc.)
+        raise RuntimeError(f"No se pudo crear wallet para user_id={user_id}")
+
+    return wallet
+
+
+async def add_money_to_wallet(user_id: int, order_id: int, amount: int | None):
+    """Añade dinero a la wallet del usuario (crea la wallet si no existe).
+
+    Reglas:
+        - Si amount es None, se calcula desde el Payment de la order.
+        - Si la wallet no existe, se crea automáticamente.
+        - Si faltan datos críticos, se lanza error (no se devuelve None silencioso).
+    """
+    async for db in get_db():
+        # 1) Resolver amount si no viene
+        if amount is None:
+            db_payment = await crud.get_payment_by_order_id(db=db, order_id=order_id)
+            if db_payment is None:
+                raise ValueError(f"No existe payment para order_id={order_id}")
+            amount = int(db_payment.amount_minor)
+
+        # 2) Asegurar wallet
+        db_wallet = await _get_or_create_wallet(db=db, user_id=int(user_id))
+
+        # 3) Actualizar saldo
+        new_amount = int(db_wallet.amount) + int(amount)
+        db_wallet = await crud.update_wallet(db=db, user_id=int(user_id), amount=new_amount)
+        return db_wallet
+
 
 async def view_wallet(user_id: int):
-    """
-    Devuelve la wallet del usuario.
+    """Devuelve la wallet del usuario; si no existe, la crea.
 
-    Si el usuario no tiene wallet todavía, la crea (lazy creation).
+    Mejora frente a tu apaño:
+        - No devuelve objetos excepción.
+        - No oculta errores reales con 'return None' / 'return exc'.
     """
     try:
         async for db in get_db():
-            db_wallet = await crud.get_element_by_id(
-                db=db,
-                model=models.CustomerWallet,
-                element_id=user_id
-            )
-
-            # Si no existe wallet, la creamos
-            if db_wallet is None:
-                db_wallet = await crud.create_wallet(db=db, user_id=user_id)
-
-            return db_wallet
-    except Exception as exc:
-        # OJO: esto oculta errores reales. Ideal: log + raise.
+            return await _get_or_create_wallet(db=db, user_id=int(user_id))
+    except Exception:
         logger.exception("Error viewing wallet for user %s", user_id)
-        return exc
+        raise
+
 
 async def pay_payment(payment_id: int) -> models.Payment | None:
+    """Paga un Payment descontando de la wallet.
+
+    Cambio clave:
+        - Asegura wallet antes de acceder a .amount (evita crash si no existe).
+    """
     try:
         async for db in get_db():
-            
             db_payment = await crud.get_element_by_id(db, models.Payment, payment_id)
             if db_payment is not None:
-                user_id = db_payment.user_id
-                amount = db_payment.amount_minor
-                db_user_wallet = await crud.get_element_by_id(db, models.CustomerWallet, user_id)
-                if db_user_wallet.amount >= amount:
-                    db_user_wallet = await crud.update_wallet(db, user_id, db_user_wallet.amount - amount)
+                user_id = int(db_payment.user_id)
+                amount = int(db_payment.amount_minor)
+
+                db_user_wallet = await _get_or_create_wallet(db=db, user_id=user_id)
+
+                if int(db_user_wallet.amount) >= amount:
+                    await crud.update_wallet(db, user_id, int(db_user_wallet.amount) - amount)
                 else:
                     return None
+
             db_payment = await crud.update_payment_status(
                 db=db,
                 payment_id=payment_id,
@@ -79,7 +102,7 @@ async def pay_payment(payment_id: int) -> models.Payment | None:
             )
             return db_payment
     except Exception as exc:
-        print(exc)
+        logger.exception("pay_payment failed payment_id=%s", payment_id)
         return None
     
 async def refund_payment_by_order_id(order_id: int) -> tuple[bool, dict]:
