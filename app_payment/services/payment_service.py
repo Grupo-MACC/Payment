@@ -81,3 +81,84 @@ async def pay_payment(payment_id: int) -> models.Payment | None:
     except Exception as exc:
         print(exc)
         return None
+    
+async def refund_payment_by_order_id(order_id: int) -> tuple[bool, dict]:
+    """Devuelve el dinero de una order a la wallet del usuario.
+
+    Esta función es la pieza que necesita el SAGA de cancelación:
+        - Entrada: order_id (el broker aporta saga_id, pero aquí no se usa)
+        - Recupera el Payment asociado a esa order para obtener user_id y amount_minor
+        - Suma el amount_minor a la wallet del usuario (creándola si no existe)
+        - Marca el Payment como CANCELED para hacer la operación idempotente
+
+    Idempotencia (pragmática y necesaria):
+        - Si ya está en STATUS_CANCELED, NO vuelve a sumar dinero.
+          Devuelve ok=True con flag already_refunded=True.
+
+    Returns:
+        (ok, info)
+            ok=True:
+                info = {
+                    "user_id": int,
+                    "amount_minor": int,
+                    "already_refunded": bool
+                }
+            ok=False:
+                info = {
+                    "reason": str,
+                    "order_id": int,
+                }
+    """
+    try:
+        async for db in get_db():
+            db_payment = await crud.get_payment_by_order_id(db=db, order_id=order_id)
+            if db_payment is None:
+                return False, {"reason": "payment_not_found", "order_id": int(order_id)}
+
+            # Ya reembolsado (idempotencia)
+            if db_payment.status == models.Payment.STATUS_CANCELED:
+                return True, {
+                    "user_id": int(db_payment.user_id),
+                    "amount_minor": int(db_payment.amount_minor),
+                    "already_refunded": True,
+                }
+
+            # Solo reembolsamos si realmente estaba pagado
+            if db_payment.status != models.Payment.STATUS_PAYED:
+                return False, {
+                    "reason": f"payment_not_refundable_status:{db_payment.status}",
+                    "order_id": int(order_id),
+                }
+
+            # Asegura wallet (si no existe, la crea)
+            db_wallet = await crud.get_element_by_id(
+                db=db,
+                model=models.CustomerWallet,
+                element_id=int(db_payment.user_id),
+            )
+            if db_wallet is None:
+                db_wallet = models.CustomerWallet(
+                    user_id=int(db_payment.user_id),
+                    amount=0,
+                    currency=db_payment.currency,
+                )
+                db.add(db_wallet)
+                await db.flush()
+
+            # Refund + marcar cancelado en la MISMA transacción
+            db_wallet.amount = int(db_wallet.amount) + int(db_payment.amount_minor)
+            db_payment.status = models.Payment.STATUS_CANCELED
+
+            await db.commit()
+            await db.refresh(db_wallet)
+            await db.refresh(db_payment)
+
+            return True, {
+                "user_id": int(db_payment.user_id),
+                "amount_minor": int(db_payment.amount_minor),
+                "already_refunded": False,
+            }
+
+    except Exception as exc:
+        logger.exception("Error refunding order_id=%s", order_id)
+        return False, {"reason": f"exception:{exc}", "order_id": int(order_id)}

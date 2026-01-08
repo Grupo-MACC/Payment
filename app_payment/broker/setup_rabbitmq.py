@@ -17,6 +17,9 @@ async def setup_rabbitmq():
     pay_queue = await channel.declare_queue('pay_queue', durable=True)
     await pay_queue.bind(exchange_command, routing_key='pay')
 
+    refund_queue = await channel.declare_queue('refund_queue', durable=True)
+    await refund_queue.bind(exchange_command, routing_key='cmd.refund')
+
     print("✅ RabbitMQ configurado correctamente (exchange + colas creadas).")
 
     connection.close()

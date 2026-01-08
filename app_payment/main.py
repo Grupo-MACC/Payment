@@ -63,7 +63,9 @@ async def lifespan(__app: FastAPI):
             task_pay = asyncio.create_task(payment_broker_service.consume_pay_command())
             task_auth = asyncio.create_task(payment_broker_service.consume_auth_events())
             task_user = asyncio.create_task(payment_broker_service.consume_user_events())
-            task_monet_return = asyncio.create_task(payment_broker_service.consume_return_money())
+            task_money_return_saga_confirm = asyncio.create_task(payment_broker_service.consume_return_money())
+            task_money_return_saga_cancel = asyncio.create_task(payment_broker_service.consume_refund_command())
+
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
             
@@ -75,7 +77,8 @@ async def lifespan(__app: FastAPI):
         task_pay.cancel()
         task_auth.cancel()
         task_user.cancel()
-        task_monet_return.cancel()
+        task_money_return_saga_confirm.cancel()
+        task_money_return_saga_cancel.cancel()
         
         # Deregister from Consul
         result = await consul_client.deregister_service(service_id)
