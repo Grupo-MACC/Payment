@@ -53,11 +53,6 @@ async def lifespan(__app: FastAPI):
         async_session = async_sessionmaker(database.engine, expire_on_commit=False)
         async with async_session() as session:
             await init_db(session)
-        
-        '''try:
-            await setup_rabbitmq.setup_rabbitmq()
-        except Exception as e:
-            logger.error(f"❌ Error configurando RabbitMQ: {e}")   '''
 
         try:
             task_pay = asyncio.create_task(payment_broker_service.consume_pay_command())
