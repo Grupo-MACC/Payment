@@ -194,6 +194,163 @@ async def publish_money_returned(user_id: int, order_id: int):
     await connection.close()
     logger.info(f"[WALLET] 📤 Publicado evento money.returned → {user_id}")
 
+
+#region SAGA CANCEL
+# Order → Payment (command)
+RK_CMD_REFUND = "cmd.refund"
+
+# Payment → Order (events)
+RK_EVT_REFUND_RESULT = "evt.refund.result"
+RK_EVT_REFUNDED = "evt.refunded"
+RK_EVT_REFUND_FAILED = "evt.refund_failed"
+
+#region refund cmd
+async def consume_refund_command():
+    """Escucha el comando de refund emitido por Order (SAGA de cancelación).
+
+    Garantía práctica:
+        - En tu proyecto hay ambigüedad sobre en qué exchange se publican comandos.
+          Para que funcione "sí o sí", esta cola se bindea a:
+              * exchange_command
+              * exchange (general)
+              * exchange_saga
+        - Y escucha tanto 'cmd.refund' como 'cmd_refund'.
+
+    Esto evita el bug típico: "lo publico, pero nadie lo consume".
+    """
+    _, channel = await get_channel()
+
+    exchange_cmd = await declare_exchange_command(channel)
+    refund_queue = await channel.declare_queue("refund_queue", durable=True)
+    await refund_queue.bind(exchange_cmd, routing_key=RK_CMD_REFUND)
+
+    await refund_queue.consume(handle_refund_command)
+
+    logger.info("[PAYMENT] 🟢 Escuchando cmd.refund (SAGA cancelación) en rks=%s", RK_CMD_REFUND)
+
+    # Mantener el loop activo
+    await asyncio.Future()
+
+
+async def handle_refund_command(message):
+    """Handler del comando cmd.refund.
+
+    Payload esperado (mínimo):
+        {
+          "order_id": 123,
+          "saga_id": "uuid-..."
+        }
+
+    Resultado:
+        - Ejecuta refund en la wallet usando lógica existente (Payment + Wallet).
+        - Publica el resultado en exchange_saga con:
+            * refund.result (siempre)
+            * evt_refunded o evt_refund_failed (según outcome)
+    """
+    async with message.process():
+        data = json.loads(message.body)
+
+        order_id = data.get("order_id")
+        saga_id = data.get("saga_id") or data.get("sagaId")
+
+        if order_id is None or saga_id is None:
+            logger.error("[PAYMENT] ❌ cmd.refund inválido: %s", data)
+            # Sin saga_id no tiene sentido responder al SAGA (no hay correlación)
+            return
+
+        ok, info = await payment_service.refund_payment_by_order_id(int(order_id))
+
+        if ok:
+            await publish_refund_events(
+                saga_id=str(saga_id),
+                order_id=int(order_id),
+                status="refunded",
+                user_id=info.get("user_id"),
+                amount_minor=info.get("amount_minor"),
+                already_refunded=bool(info.get("already_refunded")),
+            )
+        else:
+            await publish_refund_events(
+                saga_id=str(saga_id),
+                order_id=int(order_id),
+                status="refund_failed",
+                reason=info.get("reason", "unknown"),
+            )
+
+#region refund evt
+async def publish_refund_events(
+    saga_id: str,
+    order_id: int,
+    status: str,
+    reason: str | None = None,
+    user_id: int | None = None,
+    amount_minor: int | None = None,
+    already_refunded: bool = False,
+):
+    """Publica el resultado del refund para el SAGA de Order.
+
+    Publica SIEMPRE:
+        - routing_key = refund.result
+
+    Además:
+        - si status == refunded       → evt_refunded
+        - si status == refund_failed  → evt_refund_failed
+
+    Esto cumple el informe SAGA y además mantiene compatibilidad con listeners antiguos.
+    """
+    connection, channel = await get_channel()
+    try:
+        exchange = await declare_exchange_saga(channel)
+
+        payload = {
+            "saga_id": str(saga_id),
+            "order_id": int(order_id),
+            "status": str(status),
+        }
+
+        if user_id is not None:
+            payload["user_id"] = int(user_id)
+        if amount_minor is not None:
+            payload["amount_minor"] = int(amount_minor)
+        if already_refunded:
+            payload["already_refunded"] = True
+
+        if status != "refunded":
+            payload["reason"] = reason or "unknown"
+
+        def _msg():
+            return Message(
+                body=json.dumps(payload).encode(),
+                content_type="application/json",
+                delivery_mode=2,
+            )
+
+        # Siempre publicamos refund.result
+        await exchange.publish(_msg(), routing_key=RK_EVT_REFUND_RESULT)
+
+        # Y el evento específico de éxito/fracaso
+        specific_rk = RK_EVT_REFUNDED if status == "refunded" else RK_EVT_REFUND_FAILED
+        await exchange.publish(_msg(), routing_key=specific_rk)
+
+        logger.info(
+            "[PAYMENT] 📤 Refund events publicados: %s -> order_id=%s saga_id=%s",
+            specific_rk, order_id, saga_id
+        )
+
+        await publish_to_logger(
+            message={
+                "message": "Refund event published",
+                "order_id": order_id,
+                "saga_id": saga_id,
+                "status": status,
+            },
+            topic="payment.info" if status == "refunded" else "payment.error",
+        )
+    finally:
+        await connection.close()
+
+
+#region LOGGER
 async def publish_to_logger(message: dict, topic: str):
     connection = None
     try:
