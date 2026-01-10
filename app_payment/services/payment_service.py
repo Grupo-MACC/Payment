@@ -34,6 +34,26 @@ async def _get_or_create_wallet(db: AsyncSession, user_id: int) -> models.Custom
 
     return wallet
 
+async def create_payment(payment: schemas.PaymentPost) -> models.Payment | None:
+    """Crea un Payment en BD con status Initiated.
+
+    Se usa desde el broker cuando llega el comando 'pay'.
+    """
+    try:
+        async for db in get_db():
+            return await crud.create_payment_from_schema(db=db, payment=payment)
+    except Exception:
+        logger.exception("create_payment failed (order_id=%s)", getattr(payment, "order_id", None))
+        return None
+
+async def create_wallet(user_id: int) -> models.CustomerWallet | None:
+    """Crea la wallet si no existe (idempotente)."""
+    try:
+        async for db in get_db():
+            return await _get_or_create_wallet(db=db, user_id=int(user_id))
+    except Exception:
+        logger.exception("create_wallet failed (user_id=%s)", user_id)
+        return None
 
 async def add_money_to_wallet(user_id: int, order_id: int, amount: int | None):
     """Añade dinero a la wallet del usuario (crea la wallet si no existe).
