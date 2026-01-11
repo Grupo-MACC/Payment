@@ -11,7 +11,7 @@ async def _get_or_create_wallet(db: AsyncSession, user_id: int) -> models.Custom
     """Obtiene la wallet del usuario o la crea si no existe.
 
     Motivo:
-        - Evita nulls y crashes en add_money/pay cuando la wallet aún no existe.
+        - Evita nulls y crashes en add_money/cmd.check.payment cuando la wallet aún no existe.
         - Centraliza el 'lazy creation' en un único punto (sin duplicar lógica).
 
     Nota:
@@ -37,7 +37,7 @@ async def _get_or_create_wallet(db: AsyncSession, user_id: int) -> models.Custom
 async def create_payment(payment: schemas.PaymentPost) -> models.Payment | None:
     """Crea un Payment en BD con status Initiated.
 
-    Se usa desde el broker cuando llega el comando 'pay'.
+    Se usa desde el broker cuando llega el comando 'cmd.check.payment'.
     """
     try:
         async for db in get_db():

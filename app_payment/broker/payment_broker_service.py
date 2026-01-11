@@ -3,15 +3,15 @@
 
 Responsabilidades:
     - Consumir comandos (exchange_command):
-        * pay
-        * return.money
+        * cmd.check.payment
+        * cmd.return.money
         * cmd.refund (SAGA cancelación)
     - Consumir eventos generales (exchange):
         * auth.running / auth.not_running
         * user.created
     - Publicar eventos SAGA (exchange_saga):
-        * payment.result
-        * money.returned
+        * evt.payment.checked
+        * evt.money.returned
         * evt.refund.result / evt.refunded / evt.refund_failed
     - Publicar logs (exchange_logs):
         * payment.info / payment.error / payment.debug
@@ -41,12 +41,12 @@ from sql import schemas
 logger = logging.getLogger(__name__)
 
 # =============================================================================
-# Constantes RabbitMQ (routing keys / colas / topics) - único punto de control
+# Constantes RabbitMQ (routing keys / colas / topics)
 # =============================================================================
 
 # --- Comandos (Order → Payment) en exchange_command ---
-RK_CMD_PAY = "pay"
-RK_CMD_RETURN_MONEY = "return.money"
+RK_CMD_PAY = "cmd.check.payment"
+RK_CMD_RETURN_MONEY = "cmd.return.money"
 RK_CMD_REFUND = "cmd.refund"  # SAGA cancelación
 
 QUEUE_PAY = "pay_queue"
@@ -62,9 +62,9 @@ RK_USER_CREATED = "user.created"
 QUEUE_USER_CREATED = "user_created_queue"
 
 # --- Eventos SAGA (Payment → Order) en exchange_saga ---
-RK_EVT_PAYMENT_RESULT = "payment.result"
+RK_EVT_PAYMENT_RESULT = "evt.payment.checked"
 
-RK_EVT_MONEY_RETURNED = "money.returned"
+RK_EVT_MONEY_RETURNED = "evt.money.returned"
 
 RK_EVT_REFUND_RESULT = "evt.refund.result"
 RK_EVT_REFUNDED = "evt.refunded"
@@ -108,12 +108,12 @@ async def _publish_saga_event(routing_key: str, payload: dict) -> None:
 # =============================================================================
 #region 1. HANDLERS
 async def handle_order_created(message) -> None:
-    """Procesa el comando 'pay' (Order → Payment).
+    """Procesa el comando 'cmd.check.payment' (Order → Payment).
 
     Flujo:
         1) Crea un Payment (en BD).
         2) Intenta pagarlo descontando de la wallet.
-        3) Publica payment.result a Order (SAGA existente).
+        3) Publica evt.payment.checked a Order (SAGA existente).
         4) Loggea a exchange_logs.
     """
     async with message.process():
@@ -125,9 +125,9 @@ async def handle_order_created(message) -> None:
         number_of_pieces = data.get("number_of_pieces")
 
         if order_id is None or user_id is None or number_of_pieces is None:
-            logger.error("[PAYMENT] ❌ Payload inválido en 'pay': %s", data)
+            logger.error("[PAYMENT] ❌ Payload inválido en 'cmd.check.payment': %s", data)
             await publish_to_logger(
-                message={"message": "Payload inválido en pay", "payload": data},
+                message={"message": "Payload inválido en cmd.check.payment", "payload": data},
                 topic=TOPIC_ERROR,
             )
             return
@@ -249,16 +249,16 @@ async def handle_user_events(message) -> None:
 
 
 async def handle_return_money(message) -> None:
-    """Procesa return.money (comando legacy): devuelve dinero a la wallet por order_id."""
+    """Procesa cmd.return.money (comando legacy): devuelve dinero a la wallet por order_id."""
     async with message.process():
         data = json.loads(message.body)
         user_id = data.get("user_id")
         order_id = data.get("order_id")
 
         if user_id is None or order_id is None:
-            logger.error("[PAYMENT] ❌ Payload inválido en return.money: %s", data)
+            logger.error("[PAYMENT] ❌ Payload inválido en cmd.return.money: %s", data)
             await publish_to_logger(
-                message={"message": "Payload inválido en return.money", "payload": data},
+                message={"message": "Payload inválido en cmd.return.money", "payload": data},
                 topic=TOPIC_ERROR,
             )
             return
@@ -328,7 +328,7 @@ async def handle_refund_command(message) -> None:
 # =============================================================================
 #region 3. CONSUMERS
 async def consume_pay_command() -> None:
-    """Consumer del comando 'pay'."""
+    """Consumer del comando 'cmd.check.payment'."""
     connection, channel = await get_channel()
     exchange = await declare_exchange_command(channel)
 
@@ -370,7 +370,7 @@ async def consume_user_events() -> None:
 
 
 async def consume_return_money() -> None:
-    """Consumer del comando return.money (legacy)."""
+    """Consumer del comando cmd.return.money (legacy)."""
     connection, channel = await get_channel()
     exchange = await declare_exchange_command(channel)
 
@@ -400,7 +400,7 @@ async def consume_refund_command() -> None:
 # =============================================================================
 #region 4. PUBLISHERS
 async def publish_money_returned(user_id: int, order_id: int) -> None:
-    """Publica money.returned (evento saga/legacy) tras devolver dinero a wallet."""
+    """Publica evt.money.returned (evento saga/legacy) tras devolver dinero a wallet."""
     await _publish_saga_event(
         routing_key=RK_EVT_MONEY_RETURNED,
         payload={
