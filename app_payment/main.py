@@ -14,7 +14,8 @@ from broker import payment_broker_service
 from consul_client import create_consul_client
 
 # Configure logging ################################################################################
-logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
+# logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
+logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"),disable_existing_loggers=False,)
 logger = logging.getLogger(__name__)
 
 
@@ -26,6 +27,10 @@ async def lifespan(__app: FastAPI):
     service_id = os.getenv("SERVICE_ID", "payment-1")
     service_name = os.getenv("SERVICE_NAME", "payment")
     service_port = int(os.getenv("SERVICE_PORT", 5003))
+
+    # Evita errores en finally si el startup falla antes de crear tareas
+    task_pay = task_auth = task_user = None
+    task_money_return_saga_confirm = task_money_return_saga_cancel = None
 
     try:
         logger.info("Starting up")
@@ -41,6 +46,14 @@ async def lifespan(__app: FastAPI):
             health_check_url=f"http://{service_name}:{service_port}/docs"
         )
         logger.info(f"✅ Consul service registration: {result}")
+
+        # Asegura que el engine del chassis existe
+        await database.init_database()
+        if database.engine is None:
+            raise RuntimeError(
+                "database.engine sigue siendo None tras init_database(). "
+                "Revisa el chassis (microservice_chassis_grupo2/sql/database.py)."
+            )
 
         try:
             logger.info("Creating database tables")
@@ -63,8 +76,15 @@ async def lifespan(__app: FastAPI):
 
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
-            
+        
+        await payment_broker_service.ensure_auth_public_key()
+        
         yield
+
+    except Exception:
+        logger.exception("Application startup failed.")
+        raise
+
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
@@ -75,9 +95,18 @@ async def lifespan(__app: FastAPI):
         task_money_return_saga_confirm.cancel()
         task_money_return_saga_cancel.cancel()
         
+        # Shutdown database (seguro)
+        if hasattr(database, "dispose_database"):
+            await database.dispose_database()
+        elif getattr(database, "engine", None) is not None:
+            await database.engine.dispose()
+
         # Deregister from Consul
-        result = await consul_client.deregister_service(service_id)
-        logger.info(f"✅ Consul service deregistration: {result}")
+        try:
+            result = await consul_client.deregister_service(service_id)
+            logger.info("✅ Consul service deregistration: %s", result)
+        except Exception:
+            logger.exception("Consul deregistration failed.")
 
 # OpenAPI Documentation ############################################################################
 APP_VERSION = os.getenv("APP_VERSION", "2.0.0")
