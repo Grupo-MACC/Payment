@@ -25,12 +25,24 @@ async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
     consul = get_consul_client()
 
+    # Evita errores en finally si el startup falla antes de crear tareas
+    task_pay = task_auth = task_user = None
+    task_money_return_saga_confirm = task_money_return_saga_cancel = None
+
     try:        
         logger.info("Starting up")
         
         # Registro "auto" (usa SERVICE_* y CONSUL_* desde entorno)
         ok = await consul.register_self()
         logger.info("✅ Consul register_self: %s", ok)
+
+        # Asegura que el engine del chassis existe
+        await database.init_database()
+        if database.engine is None:
+            raise RuntimeError(
+                "database.engine sigue siendo None tras init_database(). "
+                "Revisa el chassis (microservice_chassis_grupo2/sql/database.py)."
+            )
 
         try:
             logger.info("Creating database tables")
@@ -53,8 +65,14 @@ async def lifespan(__app: FastAPI):
 
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
-            
+        
+        
         yield
+
+    except Exception:
+        logger.exception("Application startup failed.")
+        raise
+
     finally:
         logger.info("Shutting down database")
         await database.engine.dispose()
@@ -65,6 +83,12 @@ async def lifespan(__app: FastAPI):
         task_money_return_saga_confirm.cancel()
         task_money_return_saga_cancel.cancel()
         
+        # Shutdown database (seguro)
+        if hasattr(database, "dispose_database"):
+            await database.dispose_database()
+        elif getattr(database, "engine", None) is not None:
+            await database.engine.dispose()
+
         # Deregistro (auto) + cierre del cliente HTTP
         try:
             ok = await consul.deregister_self()
