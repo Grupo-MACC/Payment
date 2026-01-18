@@ -35,6 +35,8 @@ from microservice_chassis_grupo2.core.rabbitmq_core import (
     declare_exchange_logs,
     declare_exchange_saga,
     get_channel,
+    declare_exchange_saga_cancelation_commands,
+    declare_exchange_saga_cancelation_events,
 )
 from services import payment_service
 from sql import schemas
@@ -69,7 +71,7 @@ RK_EVT_MONEY_RETURNED = "evt.money.returned"
 
 RK_EVT_REFUND_RESULT = "evt.refund.result"
 RK_EVT_REFUNDED = "evt.refunded"
-RK_EVT_REFUND_FAILED = "evt.refund_failed"
+RK_EVT_REFUND_FAILED = "evt.refund.failed"
 
 # --- Topics para logger ---
 TOPIC_INFO = "payment.info"
@@ -94,11 +96,14 @@ def _build_json_message(payload: dict) -> Message:
     )
 
 
-async def _publish_saga_event(routing_key: str, payload: dict) -> None:
+async def _publish_saga_event(routing_key: str, payload: dict, saga_cancel=False) -> None:
     """Publica un evento en exchange_saga con payload JSON."""
     connection, channel = await get_channel()
     try:
-        exchange = await declare_exchange_saga(channel)
+        if saga_cancel:
+            exchange = await declare_exchange_saga_cancelation_commands(channel)
+        else:
+            exchange = await declare_exchange_saga(channel)
         await exchange.publish(_build_json_message(payload), routing_key=routing_key)
     finally:
         await connection.close()
@@ -445,7 +450,7 @@ async def consume_return_money() -> None:
 async def consume_refund_command() -> None:
     """Consumer del comando cmd.refund (SAGA cancelación)."""
     connection, channel = await get_channel()
-    exchange = await declare_exchange_command(channel)
+    exchange = await declare_exchange_saga_cancelation_commands(channel)
 
     queue = await channel.declare_queue(QUEUE_REFUND, durable=True)
     await queue.bind(exchange, routing_key=RK_CMD_REFUND)
@@ -469,6 +474,7 @@ async def publish_money_returned(user_id: int, order_id: int) -> None:
             "user_id": int(user_id),
             "order_id": int(order_id),
         },
+        saga_cancel=True
     )
     logger.info("[PAYMENT] 📤 Publicado evento %s → user_id=%s order_id=%s", RK_EVT_MONEY_RETURNED, user_id, order_id)
 
@@ -509,7 +515,7 @@ async def publish_refund_events(
     # Publicación doble: result + evento específico
     connection, channel = await get_channel()
     try:
-        exchange = await declare_exchange_saga(channel)
+        exchange = await declare_exchange_saga_cancelation_events(channel)
 
         await exchange.publish(_build_json_message(payload), routing_key=RK_EVT_REFUND_RESULT)
 
