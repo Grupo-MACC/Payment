@@ -28,24 +28,24 @@ async def lifespan(__app: FastAPI):
     task_money_return_saga_confirm = task_money_return_saga_cancel = None
 
     try:        
-        logger.info("Starting up")
-
-        # Asegura que el engine del chassis existe
-        await database.init_database()
-        if database.engine is None:
-            raise RuntimeError(
-                "database.engine sigue siendo None tras init_database(). "
-                "Revisa el chassis (microservice_chassis_grupo2/sql/database.py)."
-            )
-
+        try:
+            logger.info("Initializing database connection")
+            await database.init_database()
+            logger.info("Database connection initialized")
+        except Exception as e:
+            logger.error(f"Could not initialize database connection: {e}", exc_info=True)
+            with open("/home/pyuser/code/error.txt", "w") as f:
+                f.write(f"{e}\n")
+            raise e
+        
         try:
             logger.info("Creating database tables")
             async with database.engine.begin() as conn:
                 await conn.run_sync(models.Base.metadata.create_all)
         except Exception:
-            logger.error(
-                "Could not create tables at startup",
-            )
+            logger.error("Could not create tables at startup")
+
+        # 🔧 Inicializar roles y admin
         async_session = async_sessionmaker(database.engine, expire_on_commit=False)
         async with async_session() as session:
             await init_db(session)

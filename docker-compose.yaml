@@ -7,3 +7,5 @@ services:
         ports:
             - "5003:5003"
         restart: on-failure
+        volumes:
+            - ./certs:/certs:ro
