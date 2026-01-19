@@ -11,7 +11,6 @@ from sql import init_db
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from microservice_chassis_grupo2.sql import database, models
 from broker import payment_broker_service
-from consul_client import get_consul_client
 
 # Configure logging ################################################################################
 # logging.config.fileConfig(os.path.join(os.path.dirname(__file__), "logging.ini"))
@@ -23,7 +22,6 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(__app: FastAPI):
     """Lifespan context manager."""
-    consul = get_consul_client()
 
     # Evita errores en finally si el startup falla antes de crear tareas
     task_pay = task_auth = task_user = None
@@ -31,10 +29,6 @@ async def lifespan(__app: FastAPI):
 
     try:        
         logger.info("Starting up")
-        
-        # Registro "auto" (usa SERVICE_* y CONSUL_* desde entorno)
-        ok = await consul.register_self()
-        logger.info("✅ Consul register_self: %s", ok)
 
         # Asegura que el engine del chassis existe
         await database.init_database()
