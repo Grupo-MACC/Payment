@@ -56,6 +56,8 @@ async def lifespan(__app: FastAPI):
             task_user = asyncio.create_task(payment_broker_service.consume_user_events())
             task_money_return_saga_confirm = asyncio.create_task(payment_broker_service.consume_return_money())
             task_money_return_saga_cancel = asyncio.create_task(payment_broker_service.consume_refund_command())
+            
+            task_fetch_public_key = asyncio.create_task(payment_broker_service.fetch_auth_public_key_on_startup())
 
         except Exception as e:
             logger.error(f"❌ Error lanzando payment broker service: {e}")
